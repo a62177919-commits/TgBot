@@ -1,10 +1,10 @@
-name: Telegram Bot
+name: DeepSeek Telegram Bot
 
 on:
   push:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *"   # перезапуск каждые 6 часов
 
 jobs:
   run-bot:
@@ -21,12 +21,14 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pyTelegramBotAPI
+        pip install pyTelegramBotAPI requests
 
     - name: Run bot
       env:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_KEY }}
       run: |
         echo "import os" > config.py
-        echo "TOKEN = os.getenv('BOT_TOKEN')" >> config.py
+        echo "BOT_TOKEN = os.getenv('BOT_TOKEN')" >> config.py
+        echo "DEEPSEEK_KEY = os.getenv('DEEPSEEK_KEY')" >> config.py
         python3 bot.py
