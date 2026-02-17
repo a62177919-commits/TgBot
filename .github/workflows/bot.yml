@@ -2,12 +2,13 @@ name: Telegram Bot
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */4 * * *'  # Резервный запуск каждые 4 часа
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 часов максимум (лимит GitHub)
     
     steps:
     - uses: actions/checkout@v4
@@ -20,11 +21,17 @@ jobs:
     - name: Install dependencies
       run: pip install telethon
     
-    - name: Run bot
+    - name: Run bot with auto-restart
       env:
         API_ID: ${{ secrets.API_ID }}
         API_HASH: ${{ secrets.API_HASH }}
         SESSION_STRING: ${{ secrets.SESSION_STRING }}
       run: |
-        echo "Starting bot..."
-        python bot.py
+        # Запускаем бота в цикле: 4 часа работы → перезапуск
+        for i in 1 2 3; do
+          echo "=== Запуск #$i ==="
+          timeout 4800 python bot.py || true  # 80 минут = 4800 секунд
+          echo "=== Перезапуск через 5 секунд ==="
+          sleep 5
+        done
+        echo "=== Job завершен ==="
