@@ -1,71 +1,90 @@
-import telebot
-import time
-import random
+import os
+import asyncio
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
+from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
+from telethon.tl.functions.account import UpdateProfileRequest
 
-BOT_TOKEN = "8305185652:AAHjJn27N7isL89Hb9LWDJC7XrsD4pgTyJM"
+API_ID = int(os.environ['API_ID'])
+API_HASH = os.environ['API_HASH']
+SESSION_STRING = os.environ['SESSION_STRING']
 
-bot = telebot.TeleBot(BOT_TOKEN)
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-# --- БАЗОВЫЕ ПАТТЕРНЫ ДЛЯ ИМИТАЦИИ ИИ ---
+@client.on(events.NewMessage(pattern='/start'))
+async def start_handler(event):
+    await event.reply(
+       (event):
+    await event.reply(
+        "👋 Привет! Я бот для управления профилем.\n\n"
+        "📋 Команды:\n"
+        "/setname <имя> - изменить имя\n"
+        "/setlastname <фамилия> - изменить фамилию\n"
+        "/setphoto - отправь фото с этой командой\n"
+        "/delphoto - удалить фото\n"
+        "/help - помощь"
+    )
 
-def generate_ai_answer(text):
-    text = text.lower()
+@client.on(events.NewMessage(pattern='/help'))
+async def help_handler(event):
+    await event.reply(
+        "🔧 Команды:\n"
+        "/setname Имя\n"
+        "/setlastname Фамилия\n"
+        "/setphoto (с фото)\n"
+        "/delphoto"
+    )
 
-    # 1. Ответы на вопросы "что такое"
-    if "что такое" in text:
-        obj = text.replace("что такое", "").strip()
-        return f"{obj.capitalize()} — это интересная тема. Если коротко, это понятие описывает определённый объект или явление. Если хочешь, могу объяснить подробнее."
-
-    # 2. Ответы на "как работает"
-    if "как работает" in text:
-        obj = text.replace("как работает", "").strip()
-        return f"Работа {obj} основана на нескольких принципах. Обычно это включает логику, последовательность действий и взаимодействие компонентов. Могу разобрать по шагам."
-
-    # 3. Ответы на "почему"
-    if "почему" in text:
-        return "Причин может быть несколько. Обычно это связано с логикой процесса, внешними факторами или особенностями системы."
-
-    # 4. Ответы на "как сделать"
-    if "как сделать" in text:
-        return "Чтобы это сделать, нужно разбить задачу на шаги. Начни с простого, затем усложняй. Могу подсказать конкретный план."
-
-    # 5. Ответы на приветствия
-    if any(word in text for word in ["привет", "здрав", "ку", "хай"]):
-        return random.choice([
-            "Привет! Готов помочь.",
-            "Здравствуй! Что хочешь узнать?",
-            "Хай! Я тут, спрашивай."
-        ])
-
-    # 6. Ответы на прощания
-    if any(word in text for word in ["пока", "до свид", "увид"]):
-        return "До встречи! Если что — пиши."
-
-    # 7. Если ничего не подошло — умный универсальный ответ
-    return random.choice([
-        "Интересная мысль. Могу объяснить подробнее, если уточнишь.",
-        "Хороший вопрос. Давай разберёмся вместе.",
-        "Это звучит любопытно. Хочешь, дам подробный разбор?",
-        "Понимаю, о чём ты. Могу объяснить глубже."
-    ])
-
-# --- ОБРАБОТЧИКИ ---
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "Привет! Я автономный ИИ‑бот. Работает без API, всегда онлайн.")
-
-@bot.message_handler(content_types=['text'])
-def ai(message):
-    user_text = message.text
-    answer = generate_ai_answer(user_text)
-    bot.send_message(message.chat.id, answer)
-
-# --- БЕСКОНЕЧНЫЙ ЦИКЛ ---
-
-while True:
+@client.on(events.NewMessage(pattern='/setname (.+)'))
+async def set_name_handler(event):
+    new_name = event.pattern_match.group(1).strip()
     try:
-        bot.polling(none_stop=True)
+        await client(UpdateProfileRequest(first_name=new_name))
+        await event.reply(f"✅ Имя: **{new_name}**")
     except Exception as e:
-        print("Ошибка:", e)
-        time.sleep(3)
+        await event.reply(f"❌ {str(e)}")
+
+@client.on(events.NewMessage(pattern='/setlastname (.+)'))
+async def set_lastname_handler(event):
+    new_lastname = event.pattern_match.group(1).strip()
+    try:
+        await client(UpdateProfileRequest(last_name=new_lastname))
+        await event.reply(f"✅ Фамилия: **{new_lastname}**")
+    except Exception as e:
+        await event.reply(f"❌ {str(e)}")
+
+@client.on(events.NewMessage(pattern='/setphoto'))
+async def set_photo_handler(event):
+    if event.photo:
+        try:
+            path = await event.download_media()
+            await client(UploadProfilePhotoRequest(
+                file=await client.upload_file(path)
+            ))
+            os.remove(path)
+            await event.reply("✅ Фото обновлено!")
+        except Exception as e:
+            await event.reply(f"❌ {str(e)}")
+    else:
+        await event.reply("📸 Отправь фото с подписью /setphoto")
+
+@client.on(events.NewMessage(pattern='/delphoto'))
+async def delete_photo_handler(event):
+    try:
+        photos = await client.get_profile_photos('me')
+        if photos:
+            await client(DeletePhotosRequest(photos))
+            await event.reply("🗑️ Фото удалено!")
+        else:
+            await event.reply("ℹ️ Нет фото")
+    except Exception as e:
+        await event.reply(f"❌ {str(e)}")
+
+async def main():
+    print("🤖 Бот запускается...")
+    await client.start()
+    print("✅ Бот работает!")
+    await client.run_until_disconnected()
+
+if __name__ == "__main__":
+    asyncio.run(main())
