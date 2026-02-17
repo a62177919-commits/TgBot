@@ -1,32 +1,29 @@
-name: Autonomous AI Telegram Bot
+name: Telegram Bot
 
 on:
-  push:
-  workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: '0 */4 * * *'  # Каждые 4 часа
+  
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
+    
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
-
+    - uses: actions/checkout@v4
+    
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
-
+        python-version: '3.11'
+    
     - name: Install dependencies
-      run: |
-        pip install pyTelegramBotAPI
-
+      run: pip install telethon
+    
     - name: Run bot
       env:
-        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      run: |
-        echo "import os" > config.py
-        echo "BOT_TOKEN = os.getenv('BOT_TOKEN')" >> config.py
-        python3 bot.py
+        API_ID: ${{ secrets.API_ID }}
+        API_HASH: ${{ secrets.API_HASH }}
+        SESSION_STRING: ${{ secrets.SESSION_STRING }}
+      run: timeout 14390 python bot.py || true
