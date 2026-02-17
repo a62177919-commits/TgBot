@@ -2,8 +2,7 @@ name: Telegram Bot
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Каждые 4 часа
-  
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,4 +25,6 @@ jobs:
         API_ID: ${{ secrets.API_ID }}
         API_HASH: ${{ secrets.API_HASH }}
         SESSION_STRING: ${{ secrets.SESSION_STRING }}
-      run: timeout 14390 python bot.py || true
+      run: |
+        echo "Starting bot..."
+        python bot.py
