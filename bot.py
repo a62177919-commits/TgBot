@@ -6,8 +6,9 @@ import time
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
-from telethon.tl.functions.account import UpdateProfileRequest
-from telethon.errors import AuthKeyDuplicatedError, PhoneNumberInvalidError
+from telethon.tl.functions.account import UpdateProfileRequest, UpdateStatusRequest, UpdateNotifySettingsRequest
+from telethon.tl.functions.users import SetPrivacyRequest
+from telethon.tl.types import InputPrivacyKeyStatusTimestamp, InputPrivacyKeyPhoneCall, InputPrivacyKeyChatInvite, InputPrivacyKeyPhoneNumber, InputPrivacyKeyForwards, InputPrivacyKeyProfilePhoto, InputPrivacyKeyPhoneNumber, InputPrivacyValueDisallowAll, InputPrivacyValueAllowAll, InputPeerNotifySettings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,15 +20,8 @@ API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 
-logger.info(f"API_ID: {API_ID}")
-logger.info(f"API_HASH present: {bool(API_HASH)}")
-logger.info(f"SESSION_STRING present: {bool(SESSION_STRING)}")
-
 if not all([API_ID, API_HASH, SESSION_STRING]):
     logger.error("❌ Missing environment variables!")
-    logger.error(f"API_ID: {API_ID}")
-    logger.error(f"API_HASH: {'set' if API_HASH else 'NOT SET'}")
-    logger.error(f"SESSION_STRING: {'set' if SESSION_STRING else 'NOT SET'}")
     sys.exit(1)
 
 def create_client():
@@ -36,30 +30,40 @@ def create_client():
 @events.register(events.NewMessage(pattern='/start'))
 async def start_handler(event):
     await event.reply(
-        "👋 Привет! Я бот для управления профилем.\n\n"
+        "👋 Привет! Бот для управления профилем.\n\n"
         "📋 Команды:\n"
         "/setname <имя> - изменить имя\n"
         "/setlastname <фамилия> - изменить фамилию\n"
         "/setphoto - отправь фото с этой командой\n"
         "/delphoto - удалить фото\n"
+        "/security - 🔒 режим безопасности (очистка профиля)\n"
+        "/online - включить онлайн\n"
+        "/offline - скрыть онлайн\n"
         "/ping - проверить работу\n"
+        "/help - помощь"
+    )
+
+@events.register(events.NewMessage(pattern='/help'))
+async def help_handler(event):
+    await event.reply(
+        "🔧 Команды:\n\n"
+        "👤 Профиль:\n"
+        "/setname Имя\n"
+        "/setlastname Фамилия\n"
+        "/setphoto (с фото)\n"
+        "/delphoto\n\n"
+        "🔒 Безопасность:\n"
+        "/security - полная очистка профиля\n"
+        "/online - показывать онлайн\n"
+        "/offline - скрывать онлайн\n\n"
+        "📊 Другое:\n"
+        "/ping - проверка\n"
         "/help - помощь"
     )
 
 @events.register(events.NewMessage(pattern='/ping'))
 async def ping_handler(event):
-    await event.reply("🏓 Pong! Бот работает.")
-
-@events.register(events.NewMessage(pattern='/help'))
-async def help_handler(event):
-    await event.reply(
-        "🔧 Команды:\n"
-        "/setname Имя\n"
-        "/setlastname Фамилия\n"
-        "/setphoto (с фото)\n"
-        "/delphoto\n"
-        "/ping"
-    )
+    await event.reply("🏓 Pong! await event.reply("🏓 Pong! Бот работает.")
 
 @events.register(events.NewMessage(pattern='/setname (.+)'))
 async def set_name_handler(event):
@@ -110,71 +114,90 @@ async def delete_photo_handler(event):
         logger.error(f"Error: {e}")
         await event.reply(f"❌ {str(e)}")
 
-async def run_bot():
-    client = create_client()
+@events.register(events.NewMessage(pattern='/online'))
+async def online_handler(event):
+    try:
+        await event.client(UpdateStatusRequest(offline=False))
+        await event.reply("🟢 Онлайн виден")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await event.reply(f"❌ {str(e)}")
+
+@events.register(events.NewMessage(pattern='/offline'))
+async def offline_handler(event):
+    try:
+        await event.client(UpdateStatusRequest(offline=True))
+        await event.reply("🔴 Онлайн скрыт")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await event.reply(f"❌ {str(e)}")
+
+@events.register(events.NewMessage(pattern='/security'))
+async def security_handler(event):
+    """Режим безопасности - полная очистка профиля"""
+    client = event.client
+    results = []
     
-    # Регистрируем обработчики
-    client.add_event_handler(start_handler)
-    client.add_event_handler(ping_handler)
-    client.add_event_handler(help_handler)
-    client.add_event_handler(set_name_handler)
-    client.add_event_handler(set_lastname_handler)
-    client.add_event_handler(set_photo_handler)
-    client.add_event_handler(delete_photo_handler)
+    await event.reply("🔒 **Активация режима безопасности...**")
     
     try:
-        logger.info("🔄 Connecting...")
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            logger.error("❌ Session invalid!")
-            return False
-            
-        me = await client.get_me()
-        logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
-        
-        # Отправляем себе сообщение о запуске
+        # 1. Удалить аватарку
         try:
-            await client.send_message('me', f'🤖 Бот запущен! Время: {time.strftime("%H:%M:%S")}')
-        except:
-            pass
+            photos = await client.get_profile_photos('me')
+            if photos:
+                await client(DeletePhotosRequest(photos))
+                results.append("🗑️ Аватарка удалена")
+            else:
+                results.append("ℹ️ Аватарки не было")
+        except Exception as e:
+            results.append(f"❌ Ошибка аватарки: {e}")
         
-        logger.info("🟢 Bot is running...")
-        await client.run_until_disconnected()
-        logger.info("🔴 Disconnected")
-        return True
+        # 2. Сменить имя на {NULL}
+        try:
+            await client(UpdateProfileRequest(first_name="{NULL}", last_name=""))
+            results.append("👤 Имя изменено на {NULL}")
+        except Exception as e:
+            results.append(f"❌ Ошибка имени: {e}")
         
-    except AuthKeyDuplicatedError:
-        logger.error("❌ Session used elsewhere!")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Error: {e}")
-        return False
-    finally:
-        await client.disconnect()
-
-async def main():
-    restart_count = 0
-    max_restarts = 100  # Бесконечно почти
-    
-    while restart_count < max_restarts:
-        restart_count += 1
-        logger.info(f"=== Попытка #{restart_count} ===")
+        # 3. Удалить username
+        try:
+            await client(UpdateProfileRequest(username=""))
+            results.append("🔗 Username удалён")
+        except Exception as e:
+            results.append(f"❌ Ошибка username: {e}")
         
-        success = await run_bot()
+        # 4. Удалить био (about)
+        try:
+            await client(UpdateProfileRequest(about=""))
+            results.append("📝 Био очищено")
+        except Exception as e:
+            results.append(f"❌ Ошибка био: {e}")
         
-        if not success:
-            logger.info("⏳ Перезапуск через 10 секунд...")
-            await asyncio.sleep(10)
-        else:
-            logger.info("⏳ Переподключение через 5 секунд...")
-            await asyncio.sleep(5)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Stopped by user")
-    except Exception as e:
-        logger.error(f"Fatal: {e}")
-        sys.exit(1)
+        # 5. Скрыть онлайн статус
+        try:
+            await client(SetPrivacyRequest(
+                key=InputPrivacyKeyStatusTimestamp(),
+                rules=[InputPrivacyValueDisallowAll()]
+            ))
+            results.append("👻 Онлайн скрыт для всех")
+        except Exception as e:
+            results.append(f"❌ Ошибка скрытия онлайна: {e}")
+        
+        # 6. Отключить звонки от всех
+        try:
+            await client(SetPrivacyRequest(
+                key=InputPrivacyKeyPhoneCall(),
+                rules=[InputPrivacyValueDisallowAll()]
+            ))
+            results.append("📞 Звонки отключены")
+        except Exception as e:
+            results.append(f"❌ Ошибка звонков: {e}")
+        
+        # 7. Запретить пересылку сообщений
+        try:
+            await client(SetPrivacyRequest(
+                key=InputPrivacyKeyForwards(),
+                rules=[InputPrivacyValueDisallowAll()]
+            ))
+            results.append("↪️ Пересылка запрещена")
+        except Exception as e
